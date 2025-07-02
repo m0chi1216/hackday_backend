@@ -1,0 +1,15 @@
+{
+  "name": "riichi-calculator",
+  "version": "1.0.0",
+  "description": "Node.js service for riichi mahjong calculation",
+  "main": "riichi_calculator.js",
+  "scripts": {
+    "test": "node test.js"
+  },
+  "dependencies": {
+    "riichi": "latest"
+  },
+  "keywords": ["mahjong", "riichi", "calculator"],
+  "author": "hackday team",
+  "license": "MIT"
+}

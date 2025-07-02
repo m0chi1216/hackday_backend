@@ -24,6 +24,12 @@ wheels/
 .installed.cfg
 *.egg
 
+# Node.js関連
+# nodejs/node_modules/ は builderステージでコピーするため除外しない
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
 # 仮想環境
 .env
 .venv
