@@ -7,6 +7,8 @@ import re
 from typing import List, Tuple, Dict, Optional
 from collections import Counter, defaultdict
 from itertools import combinations
+from functools import lru_cache
+import copy
 
 
 def parse_hand(hand_str: str) -> List[str]:
@@ -25,14 +27,15 @@ def parse_hand(hand_str: str) -> List[str]:
     return tiles
 
 
-def tiles_to_counts(tiles: List[str]) -> List[int]:
+@lru_cache(maxsize=1024)
+def tiles_to_counts_cached(tiles_tuple: Tuple[str, ...]) -> Tuple[int, ...]:
     """
-    牌のリストを34種類の牌の枚数配列に変換
+    牌のタプルを34種類の牌の枚数配列に変換（キャッシュ版）
     0-8: 1-9m, 9-17: 1-9p, 18-26: 1-9s, 27-33: 1-7z
     """
     counts = [0] * 34
     
-    for tile in tiles:
+    for tile in tiles_tuple:
         if len(tile) == 2:
             num, suit = tile[0], tile[1]
             if suit == 'm':
@@ -44,7 +47,15 @@ def tiles_to_counts(tiles: List[str]) -> List[int]:
             elif suit == 'z':
                 counts[int(num) - 1 + 27] += 1
     
-    return counts
+    return tuple(counts)
+
+
+def tiles_to_counts(tiles: List[str]) -> List[int]:
+    """
+    牌のリストを34種類の牌の枚数配列に変換
+    0-8: 1-9m, 9-17: 1-9p, 18-26: 1-9s, 27-33: 1-7z
+    """
+    return list(tiles_to_counts_cached(tuple(sorted(tiles))))
 
 
 def count_index_to_tile(index: int) -> str:
@@ -241,6 +252,28 @@ def calculate_shanten(blocks: List[Block], meld_count: int = 0) -> int:
     return 8 - mentsu * 2 - tatsu - (1 if has_toitsu else 0)
 
 
+@lru_cache(maxsize=2048)
+def min_shanten_cached(counts_tuple: Tuple[int, ...], meld_count: int = 0) -> Tuple[int, int]:
+    """
+    最小向聴数を取得（キャッシュ版・結果の詳細は省略）
+    """
+    counts = list(counts_tuple)
+    all_results = extract_mentsu_tatsu(counts)
+    
+    min_shanten_value = float('inf')
+    result_count = 0
+    
+    for result in all_results:
+        shanten = calculate_shanten(result.blocks, meld_count)
+        if shanten < min_shanten_value:
+            min_shanten_value = shanten
+            result_count = 1
+        elif shanten == min_shanten_value:
+            result_count += 1
+    
+    return int(min_shanten_value), result_count
+
+
 def min_shanten(counts: List[int], meld_count: int = 0) -> Tuple[int, List[DecomposeResult]]:
     """
     最小向聴数と分解結果を取得
@@ -263,7 +296,7 @@ def min_shanten(counts: List[int], meld_count: int = 0) -> Tuple[int, List[Decom
 
 def get_recommended_discard(hand_str: str) -> str:
     """
-    推奨打牌を計算
+    推奨打牌を計算（高速化版）
     
     Args:
         hand_str: 手牌文字列（例: "112233456m568p112s"）
@@ -276,38 +309,88 @@ def get_recommended_discard(hand_str: str) -> str:
     if len(tiles) != 14:
         raise ValueError(f"手牌は14枚である必要があります。現在: {len(tiles)}枚")
     
+    # 手牌をcountsに変換
+    initial_counts = tiles_to_counts(tiles)
+    
     # 各打牌候補について評価
     unique_tiles = list(set(tiles))
     best_discard = None
     best_shanten = float('inf')
-    best_tile_count = 0
+    best_effective_tiles = 0
+    
+    # 候補をカウント順でソート（多い牌から評価することで早期終了しやすくする）
+    tile_counts = Counter(tiles)
+    unique_tiles.sort(key=lambda x: tile_counts[x], reverse=True)
     
     for candidate in unique_tiles:
-        # 候補牌を1枚取り除いた手牌で計算
-        remaining_tiles = tiles[:]
-        remaining_tiles.remove(candidate)
+        # 候補牌のインデックスを取得
+        candidate_idx = tile_to_index(candidate)
+        if candidate_idx == -1:
+            continue
+            
+        # 候補牌を1枚減らしたcountsを作成
+        counts = initial_counts[:]
+        counts[candidate_idx] -= 1
         
-        counts = tiles_to_counts(remaining_tiles)
-        shanten, results = min_shanten(counts)
+        # 向聴数を計算
+        shanten, _ = min_shanten_cached(tuple(counts), 0)
         
-        # 有効牌の枚数を計算（簡易版）
-        effective_tiles = 0
-        for i in range(34):
-            if counts[i] < 4:  # まだ取れる牌
-                test_counts = counts[:]
-                test_counts[i] += 1
-                test_shanten, _ = min_shanten(test_counts)
-                if test_shanten < shanten:
-                    effective_tiles += (4 - counts[i])
+        # 現在の最良より悪い場合は有効牌計算をスキップ
+        if shanten > best_shanten:
+            continue
+        
+        # 有効牌の枚数を計算
+        effective_tiles = calculate_effective_tiles_fast(counts, shanten)
         
         # より良い選択肢かチェック
         if (shanten < best_shanten or 
-            (shanten == best_shanten and effective_tiles > best_tile_count)):
+            (shanten == best_shanten and effective_tiles > best_effective_tiles)):
             best_shanten = shanten
-            best_tile_count = effective_tiles
+            best_effective_tiles = effective_tiles
             best_discard = candidate
+            
+            # 0向聴でかつ有効牌が多い場合は早期終了
+            if shanten == 0 and effective_tiles >= 8:
+                break
     
     return best_discard if best_discard else tiles[0]
+
+
+def tile_to_index(tile: str) -> int:
+    """
+    牌文字列をインデックスに変換
+    """
+    if len(tile) != 2:
+        return -1
+    
+    num, suit = tile[0], tile[1]
+    if suit == 'm':
+        return int(num) - 1
+    elif suit == 'p':
+        return int(num) - 1 + 9
+    elif suit == 's':
+        return int(num) - 1 + 18
+    elif suit == 'z':
+        return int(num) - 1 + 27
+    return -1
+
+
+def calculate_effective_tiles_fast(counts: List[int], current_shanten: int) -> int:
+    """
+    有効牌の枚数を高速計算
+    """
+    effective_tiles = 0
+    
+    # 各牌について、1枚追加した場合の向聴数を確認
+    for i in range(34):
+        if counts[i] < 4:  # まだ取れる牌
+            counts[i] += 1
+            test_shanten, _ = min_shanten_cached(tuple(counts), 0)
+            if test_shanten < current_shanten:
+                effective_tiles += (4 - counts[i] + 1)
+            counts[i] -= 1
+    
+    return effective_tiles
 
 
 def analyze_discard_candidates(hand_str: str) -> List[Dict]:
@@ -366,33 +449,49 @@ def analyze_discard_candidates(hand_str: str) -> List[Dict]:
     return candidates
 
 
+def clear_cache():
+    """
+    キャッシュをクリア（メモリ使用量削減用）
+    """
+    tiles_to_counts_cached.cache_clear()
+    min_shanten_cached.cache_clear()
+
+
+def get_cache_info():
+    """
+    キャッシュの統計情報を取得
+    """
+    return {
+        'tiles_to_counts_cache': tiles_to_counts_cached.cache_info()._asdict(),
+        'min_shanten_cache': min_shanten_cached.cache_info()._asdict()
+    }
+
+
 # テスト用の関数
 def test_recommended_discard():
-    """テスト関数"""
+    """テスト関数（高速化版）"""
     test_cases = [
         "112233456m568p12s",
         "123456789m1123p3s",
         "111222333m456p1z2z",
     ]
     
+    import time
+    
     for hand in test_cases:
         try:
             print(f"手牌: {hand}")
             
-            # 推奨打牌
+            # 高速化版のテスト
+            start_time = time.time()
             result = get_recommended_discard(hand)
-            print(f"推奨打牌: {result}")
+            elapsed = time.time() - start_time
+            print(f"推奨打牌（高速版）: {result} ({elapsed:.4f}秒)")
             
-            # 全候補の分析
-            candidates = analyze_discard_candidates(hand)
-            print("打牌候補分析:")
-            for i, candidate in enumerate(candidates[:5]):  # 上位5候補まで表示
-                print(f"  {i+1}. {candidate['discard']}切り → {candidate['shanten']}向聴 (有効牌: {candidate['effective_tiles']}枚)")
-                if candidate['effective_tile_types']:
-                    tile_info = []
-                    for tile_type in candidate['effective_tile_types']:
-                        tile_info.append(f"{tile_type['tile']}({tile_type['count']}枚)")
-                    print(f"     有効牌: {', '.join(tile_info)}")
+            # キャッシュ情報
+            cache_info = get_cache_info()
+            print(f"キャッシュヒット率: tiles={cache_info['tiles_to_counts_cache']['hits']}/{cache_info['tiles_to_counts_cache']['hits'] + cache_info['tiles_to_counts_cache']['misses']}, shanten={cache_info['min_shanten_cache']['hits']}/{cache_info['min_shanten_cache']['hits'] + cache_info['min_shanten_cache']['misses']}")
+            
             print()
         except Exception as e:
             print(f"エラー: {hand} - {e}")
@@ -402,9 +501,16 @@ if __name__ == "__main__":
     # 例: "112233456m568p12s" の推奨打牌を計算
     hand = "112233456m568p12s"
     
+    import time
+    
     print(f"手牌: {hand}")
+    
+    # 高速化版
+    start_time = time.time()
     recommended = get_recommended_discard(hand)
-    print(f"推奨打牌: {recommended}")
+    elapsed = time.time() - start_time
+    print(f"推奨打牌（高速版）: {recommended} ({elapsed:.4f}秒)")
+    
     print()
     
     # 詳細分析
@@ -418,6 +524,12 @@ if __name__ == "__main__":
                 tile_info.append(f"{tile_type['tile']}({tile_type['count']}枚)")
             print(f"   有効牌: {', '.join(tile_info)}")
     
+    # キャッシュ統計
+    print("\nキャッシュ統計:")
+    cache_info = get_cache_info()
+    print(f"tiles_to_counts: {cache_info['tiles_to_counts_cache']}")
+    print(f"min_shanten: {cache_info['min_shanten_cache']}")
+    
     print("\n" + "="*50)
     print("テスト実行:")
-    # test_recommended_discard()
+    test_recommended_discard()
