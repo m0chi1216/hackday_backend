@@ -1,14 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException
 import logging
 
-from ..schemas.riichi import RiichiCalculateRequest, RiichiCalculateResponse
+from ..schema import RiichiCalculateRequest, RiichiCalculateResponse
 from ..services.riichi_service import riichi_service
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["scoreAPI"], prefix="/api/v1/score")
 
-@router.post("/calculate", response_model=RiichiCalculateResponse)
+@router.post("", response_model=RiichiCalculateResponse)
 async def calculate_riichi_score(request: RiichiCalculateRequest) -> RiichiCalculateResponse:
     """
     riichライブラリを使用した麻雀点数計算

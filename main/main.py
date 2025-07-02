@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 import os
 
-from .routers import score
+from .routers import score, recommend
 
 app = FastAPI(
     title="Hackday Backend API",
@@ -21,6 +21,7 @@ app.add_middleware(
 )
 
 app.include_router(score.router)
+app.include_router(recommend.router)
 
 @app.get("/")
 async def root():

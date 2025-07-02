@@ -37,3 +37,13 @@ class RiichiResult(BaseModel):
     ko: Optional[List[int]] = Field(None, description="子の支払い")
     error: bool = Field(..., description="エラーの有無")
     hairi: Optional[Dict[str, Any]] = Field(None, description="牌理情報（向聴数など）")
+
+
+class RecommendDiscardRequest(BaseModel):
+    """推奨打牌リクエスト"""
+    hand: str = Field(..., description="手牌の文字列表記", example="112233456789m112s")
+
+
+class RecommendDiscardResponse(BaseModel):
+    """推奨打牌レスポンス"""
+    recommend: str = Field(..., description="推奨打牌", example="2s")
