@@ -13,14 +13,16 @@ router = APIRouter(tags=["agarihaiAPI"], prefix="/api/v1/agarihai")
 @router.post("")
 async def get_agarihai(request: RecommendDiscardRequest):
     """
-    シャンテン数と有効牌を取得
-    シャンテン数が0の場合のみ有効牌を返す
+    あがり牌を取得
 
     Args:
         request: 手牌データ（13枚）
 
     Returns:
-        シャンテン数と有効牌の情報
+        Dict containing:
+        - isTenpai (bool): シャンテン数が0ならtrue、1以上ならfalse
+        - agarihai (List[str]): あがり牌のタイルリスト（テンパイの場合のみ）
+        - calculation_time (str): 計算時間
     """
     try:
         start_time = time.time()
@@ -31,19 +33,11 @@ async def get_agarihai(request: RecommendDiscardRequest):
         elapsed_time = time.time() - start_time
         logger.info(f"Agarihai calculated in {elapsed_time:.4f}s for hand: {request.hand}")
 
-        # シャンテン数が0の場合のみ有効牌を返す
-        if result['shanten'] == 0:
-            return {
-                "shanten": result['shanten'],
-                "effective_tiles": result['effective_tiles'],
-                "calculation_time": f"{elapsed_time:.4f}s"
-            }
-        else:
-            return {
-                "shanten": result['shanten'],
-                "effective_tiles": [],
-                "calculation_time": f"{elapsed_time:.4f}s"
-            }
+        # 新しいレスポンス形式：isTenpaiとagarihaiを返す
+        return {
+            "isTenpai": result['isTenpai'],
+            "agarihai": result['agarihai'],
+        }
 
     except ValueError as e:
         logger.error(f"Invalid hand data: {str(e)}")
@@ -75,7 +69,10 @@ async def agarihai_health_check():
             "service": "agarihai",
             "test_passed": True,
             "test_hand": test_hand,
-            "test_result": test_result,
+            "test_result": {
+                "isTenpai": test_result['isTenpai'],
+                "agarihai": test_result['agarihai']
+            },
             "calculation_time": f"{elapsed_time:.4f}s"
         }
 

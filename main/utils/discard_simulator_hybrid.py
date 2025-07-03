@@ -129,13 +129,17 @@ def clear_cache_hybrid():
 def get_shanten_and_effective_tiles_hybrid(hand_str: str) -> Dict:
     """
     シャンテン数と有効牌を取得（ハイブリッド版）
-    シャンテン数が0の場合のみ有効牌を返す
+    新しいAPI形式でisTenpaiとagarihaiを返す
 
     Args:
         hand_str: 手牌文字列（例: "11223345678m11s"） - 13枚
 
     Returns:
-        シャンテン数と有効牌の情報
+        Dict containing:
+        - isTenpai (bool): シャンテン数が0ならtrue、1以上ならfalse
+        - agarihai (List[str]): 有効牌のタイルリスト（シャンテン数0の場合のみ）
+        - shanten (int): シャンテン数（後方互換性のため）
+        - effective_tiles (List[Dict]): 詳細な有効牌情報（後方互換性のため）
     """
     try:
         # NodeJSスクリプトのパス
@@ -164,9 +168,16 @@ def get_shanten_and_effective_tiles_hybrid(hand_str: str) -> Dict:
         if not response.get('success'):
             raise Exception(f"NodeJS calculation failed: {response.get('error', {}).get('message', 'Unknown error')}")
 
+        # レスポンス形式を変更：isTenpaiとagarihaiに変換
+        shanten = response['shanten']
+        is_tenpai = shanten == 0
+        agarihai = [tile['tile'] for tile in response['effective_tiles']] if shanten == 0 else []
+
         return {
-            'shanten': response['shanten'],
-            'effective_tiles': response['effective_tiles']
+            'shanten': shanten,
+            'isTenpai': is_tenpai,
+            'agarihai': agarihai,
+            'effective_tiles': response['effective_tiles']  # 後方互換性のため残す
         }
 
     except Exception as e:
@@ -197,9 +208,15 @@ def get_shanten_and_effective_tiles_hybrid(hand_str: str) -> Dict:
                             'count': tile_count
                         })
 
+        # レスポンス形式を変更：isTenpaiとagarihaiに変換
+        is_tenpai = shanten == 0
+        agarihai = [tile['tile'] for tile in effective_tiles] if shanten == 0 else []
+
         return {
             'shanten': shanten,
-            'effective_tiles': effective_tiles
+            'isTenpai': is_tenpai,
+            'agarihai': agarihai,
+            'effective_tiles': effective_tiles  # 後方互換性のため残す
         }
 
 
