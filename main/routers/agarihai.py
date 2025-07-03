@@ -1,0 +1,89 @@
+from fastapi import APIRouter, HTTPException
+import logging
+import time
+
+from ..schema import RecommendDiscardRequest
+from ..utils.discard_simulator_hybrid import get_shanten_and_effective_tiles_hybrid
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(tags=["agarihaiAPI"], prefix="/api/v1/agarihai")
+
+
+@router.post("")
+async def get_agarihai(request: RecommendDiscardRequest):
+    """
+    シャンテン数と有効牌を取得
+    シャンテン数が0の場合のみ有効牌を返す
+
+    Args:
+        request: 手牌データ（13枚）
+
+    Returns:
+        シャンテン数と有効牌の情報
+    """
+    try:
+        start_time = time.time()
+
+        # シャンテン数と有効牌を計算（ハイブリッド版を使用）
+        result = get_shanten_and_effective_tiles_hybrid(request.hand)
+
+        elapsed_time = time.time() - start_time
+        logger.info(f"Agarihai calculated in {elapsed_time:.4f}s for hand: {request.hand}")
+
+        # シャンテン数が0の場合のみ有効牌を返す
+        if result['shanten'] == 0:
+            return {
+                "shanten": result['shanten'],
+                "effective_tiles": result['effective_tiles'],
+                "calculation_time": f"{elapsed_time:.4f}s"
+            }
+        else:
+            return {
+                "shanten": result['shanten'],
+                "effective_tiles": [],
+                "calculation_time": f"{elapsed_time:.4f}s"
+            }
+
+    except ValueError as e:
+        logger.error(f"Invalid hand data: {str(e)}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid hand data: {str(e)}"
+        )
+    except Exception as e:
+        logger.error(f"Error in get_agarihai: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Internal server error: {str(e)}"
+        )
+
+
+@router.get("/health")
+async def agarihai_health_check():
+    """あがり牌サービスのヘルスチェック"""
+    try:
+        # 簡単なテスト計算を実行（13枚の手牌）
+        test_hand = "1122334567m112s"
+
+        start_time = time.time()
+        test_result = get_shanten_and_effective_tiles_hybrid(test_hand)
+        elapsed_time = time.time() - start_time
+
+        return {
+            "status": "healthy",
+            "service": "agarihai",
+            "test_passed": True,
+            "test_hand": test_hand,
+            "test_result": test_result,
+            "calculation_time": f"{elapsed_time:.4f}s"
+        }
+
+    except Exception as e:
+        logger.error(f"Health check failed: {str(e)}")
+        return {
+            "status": "unhealthy",
+            "service": "agarihai",
+            "test_passed": False,
+            "error": str(e)
+        }
