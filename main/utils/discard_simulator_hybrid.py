@@ -126,6 +126,100 @@ def clear_cache_hybrid():
     pass
 
 
+def get_shanten_and_effective_tiles_hybrid(hand_str: str) -> Dict:
+    """
+    シャンテン数と有効牌を取得（ハイブリッド版）
+    新しいAPI形式でisTenpaiとagarihaiを返す
+
+    Args:
+        hand_str: 手牌文字列（例: "11223345678m11s"） - 13枚
+
+    Returns:
+        Dict containing:
+        - isTenpai (bool): シャンテン数が0ならtrue、1以上ならfalse
+        - agarihai (List[str]): 有効牌のタイルリスト（シャンテン数0の場合のみ）
+        - shanten (int): シャンテン数（後方互換性のため）
+        - effective_tiles (List[Dict]): 詳細な有効牌情報（後方互換性のため）
+    """
+    try:
+        # NodeJSスクリプトのパス
+        script_path = '/app/nodejs/discard_calculator.js'
+
+        # 入力データを準備
+        input_data = {
+            'hand': hand_str,
+            'action': 'agarihai'
+        }
+
+        # NodeJSを実行
+        result = subprocess.run(
+            ['node', script_path, json.dumps(input_data)],
+            capture_output=True,
+            text=True,
+            timeout=5  # 5秒でタイムアウト
+        )
+
+        if result.returncode != 0:
+            raise Exception(f"NodeJS execution failed: {result.stderr}")
+
+        # 結果をパース
+        response = json.loads(result.stdout)
+
+        if not response.get('success'):
+            raise Exception(f"NodeJS calculation failed: {response.get('error', {}).get('message', 'Unknown error')}")
+
+        # レスポンス形式を変更：isTenpaiとagarihaiに変換
+        shanten = response['shanten']
+        is_tenpai = shanten == 0
+        agarihai = [tile['tile'] for tile in response['effective_tiles']] if shanten == 0 else []
+
+        return {
+            'shanten': shanten,
+            'isTenpai': is_tenpai,
+            'agarihai': agarihai,
+            'effective_tiles': response['effective_tiles']  # 後方互換性のため残す
+        }
+
+    except Exception as e:
+        # NodeJSが失敗した場合は元のPython実装にフォールバック
+        import sys
+        sys.path.append('/app')
+        from main.utils.discard_simulator import minShanten, tilesToCounts, parseHand, indexToTile
+
+        tiles = parseHand(hand_str)
+        if len(tiles) != 13:
+            raise ValueError(f"手牌は13枚である必要があります。現在: {len(tiles)}枚")
+
+        counts = tilesToCounts(tiles)
+        shanten, _ = minShanten(counts)
+
+        effective_tiles = []
+        if shanten == 0:
+            for i in range(34):
+                if counts[i] < 4:
+                    test_counts = counts[:]
+                    test_counts[i] += 1
+                    test_shanten, _ = minShanten(test_counts)
+
+                    if test_shanten < shanten:
+                        tile_count = 4 - counts[i]
+                        effective_tiles.append({
+                            'tile': indexToTile(i),
+                            'count': tile_count
+                        })
+
+        # レスポンス形式を変更：isTenpaiとagarihaiに変換
+        is_tenpai = shanten == 0
+        agarihai = [tile['tile'] for tile in effective_tiles] if shanten == 0 else []
+
+        return {
+            'shanten': shanten,
+            'isTenpai': is_tenpai,
+            'agarihai': agarihai,
+            'effective_tiles': effective_tiles  # 後方互換性のため残す
+        }
+
+
 # テスト用の関数
 def test_hybrid_performance():
     """ハイブリッド版の性能テスト"""

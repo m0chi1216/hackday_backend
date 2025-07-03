@@ -472,6 +472,49 @@ function analyzeDiscardCandidates(handStr) {
     return candidates;
 }
 
+// 手牌のシャンテン数と有効牌を取得（agarihai用）
+function getShantenAndEffectiveTiles(handStr) {
+    const tiles = parseHand(handStr);
+
+    if (tiles.length !== 13) {
+        throw new Error(`手牌は13枚である必要があります。現在: ${tiles.length}枚`);
+    }
+
+    const counts = tilesToCounts(tiles);
+    const [shanten, results] = minShanten(counts);
+
+    // シャンテン数が0の場合のみ有効牌を計算
+    if (shanten === 0) {
+        const effectiveTileTypes = [];
+
+        for (let i = 0; i < 34; i++) {
+            if (counts[i] < 4) {
+                const testCounts = [...counts];
+                testCounts[i]++;
+                const [testShanten] = minShanten(testCounts);
+
+                if (testShanten < shanten) {
+                    const tileCount = 4 - counts[i];
+                    effectiveTileTypes.push({
+                        tile: indexToTile(i),
+                        count: tileCount
+                    });
+                }
+            }
+        }
+
+        return {
+            shanten: shanten,
+            effective_tiles: effectiveTileTypes
+        };
+    } else {
+        return {
+            shanten: shanten,
+            effective_tiles: []
+        };
+    }
+}
+
 // メイン処理
 function main() {
     if (process.argv.length < 3) {
@@ -497,6 +540,11 @@ function main() {
             result = {
                 success: true,
                 candidates: analyzeDiscardCandidates(hand)
+            };
+        } else if (action === 'agarihai') {
+            result = {
+                success: true,
+                ...getShantenAndEffectiveTiles(hand)
             };
         } else {
             throw new Error(`Unknown action: ${action}`);
