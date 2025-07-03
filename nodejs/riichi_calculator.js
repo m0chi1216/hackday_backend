@@ -8,28 +8,30 @@ const Riichi = require('riichi');
 function calculateRiichi(inputData) {
     try {
         const { hand, options = {} } = inputData;
-        
+
         // 基本の手牌文字列を構築
         let handString = hand;
-        
+
         // ドラの追加
         if (options.dora && options.dora.length > 0) {
             handString += '+d' + options.dora.join('');
         }
-        
-        // 追加オプション（立直、一発など）
+
+        // 追加オプション（立直、一発など）と場風・自風の設定
         if (options.extra) {
             handString += '+' + options.extra;
-        }
-        
-        // 場風・自風の設定
-        if (options.wind) {
+            // windはextraに続けて+なしで追加
+            if (options.wind) {
+                handString += options.wind;
+            }
+        } else if (options.wind) {
+            // extraがない場合は通常通り+付きで追加
             handString += '+' + options.wind;
         }
-        
+
         // Riichインスタンスを作成
         const riichi = new Riichi(handString);
-        
+
         // オプション設定
         if (options.disableWyakuman) {
             riichi.disableWyakuman();
@@ -50,10 +52,10 @@ function calculateRiichi(inputData) {
                 riichi.disableYaku(yaku);
             });
         }
-        
+
         // 計算実行
         const result = riichi.calc();
-        
+
         return {
             success: true,
             result: result,
@@ -63,7 +65,7 @@ function calculateRiichi(inputData) {
                 options: options
             }
         };
-        
+
     } catch (error) {
         return {
             success: false,
