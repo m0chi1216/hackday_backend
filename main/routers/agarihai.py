@@ -41,10 +41,17 @@ async def get_agarihai(request: RecommendDiscardRequest):
 
     except ValueError as e:
         logger.error(f"Invalid hand data: {str(e)}")
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid hand data: {str(e)}"
-        )
+        error_message = str(e)
+        if "13枚である必要があります" in error_message:
+            raise HTTPException(
+                status_code=400,
+                detail=f"手牌は13枚である必要があります。{error_message}"
+            )
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail=f"手牌の形式が正しくありません: {error_message}"
+            )
     except Exception as e:
         logger.error(f"Error in get_agarihai: {str(e)}")
         raise HTTPException(

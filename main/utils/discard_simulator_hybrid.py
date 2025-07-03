@@ -141,6 +141,18 @@ def get_shanten_and_effective_tiles_hybrid(hand_str: str) -> Dict:
         - shanten (int): シャンテン数（後方互換性のため）
         - effective_tiles (List[Dict]): 詳細な有効牌情報（後方互換性のため）
     """
+    # 事前に手牌の枚数をチェック
+    try:
+        # 簡易的な手牌解析で枚数チェック
+        import sys
+        sys.path.append('/app')
+        from main.utils.discard_simulator import parse_hand
+        tiles = parse_hand(hand_str)
+        if len(tiles) != 13:
+            raise ValueError(f"手牌は13枚である必要があります。現在: {len(tiles)}枚")
+    except Exception as parse_error:
+        raise ValueError(f"手牌の形式が正しくありません: {str(parse_error)}")
+
     try:
         # NodeJSスクリプトのパス
         script_path = '/app/nodejs/discard_calculator.js'
@@ -184,14 +196,14 @@ def get_shanten_and_effective_tiles_hybrid(hand_str: str) -> Dict:
         # NodeJSが失敗した場合は元のPython実装にフォールバック
         import sys
         sys.path.append('/app')
-        from main.utils.discard_simulator import minShanten, tilesToCounts, parseHand, indexToTile
+        from main.utils.discard_simulator import min_shanten, tiles_to_counts, parse_hand, count_index_to_tile
 
-        tiles = parseHand(hand_str)
+        tiles = parse_hand(hand_str)
         if len(tiles) != 13:
             raise ValueError(f"手牌は13枚である必要があります。現在: {len(tiles)}枚")
 
-        counts = tilesToCounts(tiles)
-        shanten, _ = minShanten(counts)
+        counts = tiles_to_counts(tiles)
+        shanten, _ = min_shanten(counts)
 
         effective_tiles = []
         if shanten == 0:
@@ -199,12 +211,12 @@ def get_shanten_and_effective_tiles_hybrid(hand_str: str) -> Dict:
                 if counts[i] < 4:
                     test_counts = counts[:]
                     test_counts[i] += 1
-                    test_shanten, _ = minShanten(test_counts)
+                    test_shanten, _ = min_shanten(test_counts)
 
                     if test_shanten < shanten:
                         tile_count = 4 - counts[i]
                         effective_tiles.append({
-                            'tile': indexToTile(i),
+                            'tile': count_index_to_tile(i),
                             'count': tile_count
                         })
 
